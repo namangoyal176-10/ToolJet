@@ -1,10 +1,11 @@
 import React from 'react';
 import * as ReactDOM from 'react-dom';
 import LegalReasonsErrorModal from '../_components/LegalReasonsErrorModal';
+import WorkspaceLimitModal from '../_components/WorkspaceLimitModal';
 import SolidIcon from '../_ui/Icon/SolidIcons';
 import { copyToClipboard } from '@/_helpers/appUtils';
 import { sessionService, authenticationService } from '@/_services';
-import { redirectToSwitchOrArchivedAppPage } from './routes';
+import { redirectToSwitchOrArchivedAppPage, redirectToErrorPage } from './routes';
 import { handleError } from './handleAppAccess';
 import { fetchEdition } from '@/modules/common/helpers/utils';
 import { ERROR_TYPES } from './constants';
@@ -106,14 +107,21 @@ export function handleResponse(
         }
         const darkMode = localStorage.getItem('darkMode') === 'true';
         const edition = fetchEdition();
-        const modalEl = React.createElement(LegalReasonsErrorModal, {
-          showModal: true,
-          message,
-          body: message.includes('apps') && modalBody,
-          feature,
-          darkMode,
-          edition: edition,
-        });
+        const workspaceLimitMatch = message.match(/reached the number of workspaces \((\d+)\/(\d+)\)/);
+        const modalEl = workspaceLimitMatch
+          ? React.createElement(WorkspaceLimitModal, {
+              showModal: true,
+              current: workspaceLimitMatch[1],
+              limit: workspaceLimitMatch[2],
+            })
+          : React.createElement(LegalReasonsErrorModal, {
+              showModal: true,
+              message,
+              body: message.includes('apps') && modalBody,
+              feature,
+              darkMode,
+              edition: edition,
+            });
 
         const modalContainer = document.getElementById('modal-div');
         if (!message?.includes('expired') && !avoidUpgradeModal && modalContainer) {
@@ -130,6 +138,8 @@ export function handleResponse(
         if (currentSession?.authentication_status) {
           redirectToSwitchOrArchivedAppPage(data);
         }
+      } else if (response.status === 404 && data?.message === 'App is not available on this branch') {
+        redirectToErrorPage(ERROR_TYPES.APP_NOT_ON_BRANCH);
       }
       const error = (data && data.message) || response.statusText;
       return Promise.reject({ error, data, statusCode: response?.status });

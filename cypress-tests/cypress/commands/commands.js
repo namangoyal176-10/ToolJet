@@ -206,9 +206,9 @@ Cypress.Commands.add("verifyElement", (selector, text, eqValue) => {
 Cypress.Commands.add("getAppId", (appName) => {
   cy.task("dbConnection", {
     dbconfig: Cypress.env("app_db"),
-    sql: `select id from apps where name='${appName}';`,
+    sql: `select app_id from app_versions where app_name='${appName}';`,
   }).then((resp) => {
-    const appId = resp.rows[0]?.id;
+    const appId = resp.rows[0]?.app_id;
     return appId;
   });
 });
@@ -242,7 +242,9 @@ Cypress.Commands.add(
     });
     cy.visit(`/${workspaceId}/apps/${workflowId}/${slug}`);
 
-    cy.wait("@getWorkflowData").then((interception) => {
+    // The editor fetches the workflow only once its bundle has loaded, which
+    // can take longer than the 10s default on a development build.
+    cy.wait("@getWorkflowData", { requestTimeout: 30000 }).then((interception) => {
       const responseData = interception.response.body;
 
       Cypress.env("editingVersionId", responseData.editing_version.id);

@@ -247,7 +247,11 @@ export class TooljetDbUtilService {
 
     csvStream
       .on('headers', (headers) => {
-        const resolved = this.resolvePrimaryKeyAndDataColumns(internalTableDatabaseColumn, primaryKeyColumnSchema, headers);
+        const resolved = this.resolvePrimaryKeyAndDataColumns(
+          internalTableDatabaseColumn,
+          primaryKeyColumnSchema,
+          headers
+        );
         primaryKeyColumnsInCsv = resolved.primaryKeyColumns;
         dataColumnsInCsv = resolved.dataColumns;
 
@@ -411,7 +415,11 @@ export class TooljetDbUtilService {
 
     csvStream
       .on('headers', (headers) => {
-        const resolved = this.resolvePrimaryKeyAndDataColumns(internalTableDatabaseColumn, primaryKeyColumnSchema, headers);
+        const resolved = this.resolvePrimaryKeyAndDataColumns(
+          internalTableDatabaseColumn,
+          primaryKeyColumnSchema,
+          headers
+        );
         primaryKeyColumnsInCsv = resolved.primaryKeyColumns;
 
         if (primaryKeyColumnsInCsv.length === 0) {
@@ -557,9 +565,7 @@ export class TooljetDbUtilService {
         if (requiredColumns.includes(columnName) && isEmpty(row[columnName]))
           throw `Primary key value required for column ${columnName}`;
 
-        const columnDetails = internalTableDatabaseColumn.find(
-          (colDetails) => colDetails.column_name === columnName
-        );
+        const columnDetails = internalTableDatabaseColumn.find((colDetails) => colDetails.column_name === columnName);
         filteredRow[columnName] = this.convertToDataType(row[columnName], columnDetails!.data_type);
       }
 
@@ -638,8 +644,12 @@ export class TooljetDbUtilService {
       case TJDB.bigint:
         return this.convertNumber(columnValue, supportedDataType);
       case TJDB.jsonb:
-        if (typeof columnValue !== 'string') return columnValue;
-        return JSON.parse(columnValue);
+        // Hand jsonb to the driver as JSON text: node-postgres serialises a JS array as a Postgres
+        // array literal ({...}), which a jsonb column rejects. Parsing still validates the cell.
+        if (typeof columnValue !== 'string') return JSON.stringify(columnValue);
+        // A `null` cell stays a database NULL rather than the JSON value null
+        if (JSON.parse(columnValue) === null) return null;
+        return columnValue;
       default:
         return columnValue;
     }

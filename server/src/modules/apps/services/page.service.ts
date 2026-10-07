@@ -3,7 +3,7 @@ import { EntityManager } from 'typeorm';
 import { Page } from '@entities/page.entity';
 import { ComponentsService } from './component.service';
 import { CreatePageDto, UpdatePageDto } from '../dto/page';
-import { dbTransactionWrap, dbTransactionForAppVersionAssociationsUpdate } from 'src/helpers/database.helper';
+import { dbTransactionWrap } from 'src/helpers/database.helper';
 import { repairParentCycles } from 'src/helpers/parent_cycle.helper';
 import { EventsService } from './event.service';
 import { Component } from 'src/entities/component.entity';
@@ -34,7 +34,7 @@ export class PageService implements IPageService {
     protected pageHelperService: PageHelperService,
     protected eventHandlerService: EventsService,
     protected readonly transactionLogger: TransactionLogger
-  ) { }
+  ) {}
 
   /**
    * Hook called before page creation - override in EE to capture state for history
@@ -150,20 +150,12 @@ export class PageService implements IPageService {
 
   async findPagesForVersion(appVersionId: string, manager?: EntityManager): Promise<Page[]> {
     const allPages = await this.pageHelperService.fetchPages(appVersionId, manager);
-    // One batched query for every page's components (one pool connection) instead of
-    // one transaction per page — the per-page fan-out starved the pool on large apps
-    // and 500ed GET /api/apps/:id with "timeout exceeded when trying to connect".
-    const componentsByPage = await this.componentsService.getAllComponentsForPages(
-      allPages.map((page) => page.id),
-      manager
-    );
+    const pageIds = allPages.map((p) => p.id);
+    const componentsByPage = await this.componentsService.getAllComponentsForPages(pageIds, manager);
     return allPages.map((page) => {
-      // Keyed map { [componentId]: ... }, not Component[] — same shape the endpoint
-      // always returned; Page.components was implicitly `any` before batching.
-      const components: any = componentsByPage[page.id] ?? {};
       delete page.appVersionId;
-      return { ...page, components, restricted: false };
-    });
+      return { ...page, components: componentsByPage.get(page.id) ?? {}, restricted: false };
+    }) as unknown as Page[];
   }
 
   async findOne(id: string): Promise<Page> {
@@ -176,10 +168,10 @@ export class PageService implements IPageService {
     const historyUserId = (RequestContext.currentContext?.req as any)?.user?.id;
     const context = await this.beforePageCreate(page, appVersionId, organizationId);
 
-    const result = await dbTransactionForAppVersionAssociationsUpdate(async (manager) => {
+    const result = await dbTransactionWrap(async (manager) => {
       const newPage = await this.pageHelperService.preparePageObject(page, appVersionId, organizationId);
       return await manager.save(Page, newPage);
-    }, appVersionId);
+    });
 
     const operationTimestamp = Date.now();
     this.afterPageCreate(context, result, appVersionId, historyUserId, operationTimestamp).catch((err) =>
@@ -195,7 +187,7 @@ export class PageService implements IPageService {
 
     let clonedPage: Page | null = null;
 
-    await dbTransactionForAppVersionAssociationsUpdate(async (manager) => {
+    await dbTransactionWrap(async (manager) => {
       const pageToClone = await manager.findOne(Page, {
         where: { id: pageId, appVersionId },
       });
@@ -228,6 +220,7 @@ export class PageService implements IPageService {
       newPage.icon = pageToClone.icon || 'IconFile';
       newPage.openIn = pageToClone.openIn;
       newPage.appId = pageToClone.appId;
+      newPage.targetCorelationId = pageToClone.targetCorelationId;
       newPage.url = pageToClone.url;
       newPage.disabled = pageToClone.disabled;
       newPage.hidden = pageToClone.hidden;
@@ -242,7 +235,7 @@ export class PageService implements IPageService {
       const events = await this.eventHandlerService.findEventsForVersion(appVersionId, manager);
 
       return { pages, events };
-    }, appVersionId);
+    });
 
     const operationTimestamp = Date.now();
     if (clonedPage) {
@@ -325,11 +318,15 @@ export class PageService implements IPageService {
         pageComponents.map(async (component) => {
           const newComponentId = componentsIdMap[component.id];
 
+          // Git stores one file per co_relation_id — an inherited one makes the clone overwrite its source on push.
           const newComponent = manager.create(Component, {
             ...component,
             id: newComponentId,
             pageId: clonePageId,
             parent: null,
+            co_relation_id: undefined,
+            createdAt: undefined,
+            updatedAt: undefined,
           });
           Object.assign(newComponent, {
             name: component.name,
@@ -363,6 +360,8 @@ export class PageService implements IPageService {
               ...layout,
               id: undefined, // Let TypeORM generate a new ID
               componentId: newComponent.id,
+              co_relation_id: undefined,
+              updatedAt: undefined,
             })
           );
           newComponentLayouts.push(...clonedLayouts);
@@ -531,7 +530,7 @@ export class PageService implements IPageService {
     const historyUserId = (RequestContext.currentContext?.req as any)?.user?.id;
     const context = await this.beforePageDelete(pageId, appVersionId);
 
-    const result = await dbTransactionForAppVersionAssociationsUpdate(async (manager: EntityManager) => {
+    const result = await dbTransactionWrap(async (manager: EntityManager) => {
       const pageExists = await manager.findOne(Page, {
         where: { id: pageId },
       });
@@ -568,7 +567,7 @@ export class PageService implements IPageService {
       }
 
       return await this.pageHelperService.rearrangePagesOrderPostDeletion(pageExists, manager, organizationId);
-    }, appVersionId);
+    });
 
     const operationTimestamp = Date.now();
     this.afterPageDelete(context, pageId, appVersionId, historyUserId, operationTimestamp).catch((err) =>
@@ -652,5 +651,31 @@ export class PageService implements IPageService {
 
   async findModuleContainer(appVersionId: string, organizationId: string): Promise<any> {
     return this.pageHelperService.findModuleContainer(appVersionId, organizationId);
+  }
+
+  async findModuleContainersForVersions(
+    appVersionIds: string[],
+    _organizationId: string,
+    manager: EntityManager
+  ): Promise<Map<string, any>> {
+    const versionIds = appVersionIds.filter(Boolean);
+    if (versionIds.length === 0) return new Map();
+
+    const pagesByVersion = await this.pageHelperService.findFirstPagesByVersionIds(versionIds, manager);
+    if (pagesByVersion.size === 0) return new Map();
+
+    const pageIds = [...pagesByVersion.values()].map((p) => p.id);
+    const componentsByPage = await this.componentsService.getAllComponentsForPages(pageIds, manager);
+
+    const moduleContainerByVersion = new Map<string, any>();
+    for (const [versionId, page] of pagesByVersion) {
+      const components = componentsByPage.get(page.id) ?? {};
+      const moduleContainer = _.find(
+        Object.values(components),
+        (c: any) => c?.component?.component === 'ModuleContainer'
+      );
+      if (moduleContainer) moduleContainerByVersion.set(versionId, moduleContainer);
+    }
+    return moduleContainerByVersion;
   }
 }

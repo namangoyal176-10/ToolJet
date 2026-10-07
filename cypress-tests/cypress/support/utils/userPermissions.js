@@ -56,13 +56,22 @@ export const getGroupPermissionInput = (isEnterprise, flag) => {
       workflowDelete: flag,
       dataSourceCreate: flag,
       dataSourceDelete: flag,
-      folderCRUD: flag,
+      folderCreate: flag,
+      folderDelete: flag,
       orgConstantCRUD: flag,
+      workflowFolderCreate: flag,
+      workflowFolderDelete: flag,
+      tjdbCRUD: flag,
+      moduleFolderCreate: flag,
+      moduleFolderDelete: flag,
+      moduleCreate: flag,
+      moduleDelete: flag,
     }
     : {
       appCreate: flag,
       appDelete: flag,
-      folderCRUD: flag,
+      folderCreate: flag,
+      folderDelete: flag,
       orgConstantCRUD: flag,
     };
 };
@@ -109,8 +118,8 @@ export const verifyBuilderPermissions = (
 };
 
 export const verifyBasicPermissions = (canCreate = true) => {
-  cy.get(commonSelectors.dashboardAppCreateButton).should(
-    canCreate ? "be.enabled" : "be.disabled"
+  cy.get(commonSelectors.appCreateButton).should(
+    canCreate ? "be.enabled" : "not.exist"
   );
   cy.get(commonSelectors.createNewFolderButton).should(
     canCreate ? "exist" : "not.exist"

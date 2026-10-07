@@ -1008,7 +1008,8 @@ export const validateName = (
   allowSpecialChars = true,
   allowSpaces = true,
   checkReservedWords = false,
-  allowAllCases = false
+  allowAllCases = false,
+  maxLength = 50
 ) => {
   const newName = name;
   let errorMsg = '';
@@ -1055,7 +1056,7 @@ export const validateName = (
       };
     }
 
-    if (newName.length > 50) {
+    if (newName.length > maxLength) {
       errorMsg = `Maximum length has been reached.`;
       showError &&
         toast.error(errorMsg, {
@@ -1153,7 +1154,7 @@ export const deepEqual = (obj1, obj2, excludedKeys = []) => {
         if (!deepEqual(obj1[key], obj2[key], excludedKeys)) {
           return false;
         }
-      } else if (obj1[key] != obj2[key]) {
+      } else if (obj1[key] !== obj2[key]) {
         return false;
       }
     }

@@ -52,6 +52,9 @@ Cypress.Commands.add(
       // renderer's intercept state; without this the first drag goes cold and
       // the plugin's retry loop can overrun the 15s task timeout. Priming here
       // lands the drag on the first attempt.
+      cy.wait(1000);
+      cy.realDragInit();
+      cy.wait(1000);
       cy.realDragRewarm();
       cy.realDragAndDrop(sourceSelector, resolvedCanvas, {
         targetX: positionX,
@@ -360,18 +363,11 @@ Cypress.Commands.add("hideTooltip", () => {
  * @tjUsage cy.createApp('My Test App')
  */
 Cypress.Commands.add("createApp", (appName) => {
-  const getAppButtonSelector = ($title) =>
-    $title.text().includes(commonText.introductionMessage)
-      ? commonSelectors.dashboardAppCreateButton
-      : commonSelectors.appCreateButton;
-
-  cy.get("body").then(($title) => {
-    cy.get(getAppButtonSelector($title))
-      .scrollIntoView()
-      .click({ force: true }); //workaround for cypress dashboard click issue
-    cy.clearAndType('[data-cy="app-name-input"]', appName);
-    cy.get('[data-cy="create-app"]').click();
-  });
+  cy.get(commonSelectors.appCreateButton)
+    .scrollIntoView()
+    .click({ force: true }); //workaround for cypress dashboard click issue
+  cy.clearAndType('[data-cy="app-name-input"]', appName);
+  cy.get('[data-cy="create-app"]').click();
   cy.waitForAppLoad();
   cy.skipEditorPopover();
 });

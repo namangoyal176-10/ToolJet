@@ -57,7 +57,10 @@ describe("App Export", () => {
 
     cy.apiLogin();
     cy.visit(`${data.workspaceSlug}`);
-    cy.get(importSelectors.importOptionInput, { timeout: 20000 })
+    cy.get(importSelectors.dropDownMenu, { timeout: 20000 })
+      .should("be.visible")
+      .click();
+    cy.get(importSelectors.importOptionInput)
       .eq(0)
       .selectFile(TEST_DATA.appFiles.multiVersion, { force: true });
     cy.clearAndType(commonSelectors.appNameInput, data.appName);
@@ -92,7 +95,7 @@ describe("App Export", () => {
       const filePath = `./cypress/downloads/${downloadedAppExportFileName}`;
 
       expect(downloadedAppExportFileName).to.contain(
-        data.appName.toLowerCase()
+        data.appName
       );
 
       cy.readFile(filePath).then((appData) => {
@@ -118,7 +121,7 @@ describe("App Export", () => {
       const filePath = `./cypress/downloads/${downloadedAppExportFileName}`;
 
       expect(downloadedAppExportFileName).to.contain(
-        data.appName.toLowerCase()
+        data.appName
       );
 
       cy.readFile(filePath).then((appData) => {
