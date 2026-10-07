@@ -20,3 +20,6 @@ export * from './helpers/workflows';
 
 // --- Custom Component Libraries: entity factories, PAT minting, upload fixtures ---
 export * from './helpers/custom-component-libraries';
+
+// --- Dashboard v2: pinned items and per-user app activity factories ---
+export * from './helpers/dashboard';
